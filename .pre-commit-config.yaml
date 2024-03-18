@@ -1,0 +1,30 @@
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.5.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+        args: ["--unsafe"]
+      - id: check-added-large-files
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.3.2
+    hooks:
+      # Formatter
+      - id: ruff-format
+      # Linter
+      - id: ruff
+        args: [ --fix ]
+
+  - repo: local
+    hooks:
+      - id: system
+        name: MyPy
+        entry: python -m mypy.__main__
+        language: system
+        files: \.py$
+        args:
+          - --strict
+          - --implicit-reexport
+          - --ignore-missing-imports

@@ -1,0 +1,41 @@
+name: Test Python package
+
+on:
+  push:
+    branches:
+      - 'main'
+  pull_request:
+    branches:
+      - 'main'
+jobs:
+  build:
+    env:
+      COVERAGE_TOTAL: 50
+    strategy:
+      matrix:
+        os: [ubuntu-latest]
+        python-version: ["3.12", "3.11"]
+
+    runs-on: ${{ matrix.os }}
+    steps:
+    - uses: actions/checkout@v2
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v2
+      with:
+        python-version: ${{ matrix.python-version }}
+    - name: Install dependencies
+      run: |
+        export PATH=$CONDA/bin:$PATH
+        conda env update --file environment.yml --name base
+        conda env update --file environment_dev.yml --name base
+    - name: Test pytest
+      run: |
+        if [ -d ./tests ]
+        then
+        export PATH=$CONDA/bin:$PATH
+        pytest --cov-fail-under=${{ env.COVERAGE_TOTAL }} --cov */
+        fi
+    - name: Test format
+      run: |
+        export PATH=$CONDA/bin:$PATH
+        pre-commit run --all-files

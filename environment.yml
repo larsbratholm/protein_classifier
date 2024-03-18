@@ -1,0 +1,17 @@
+channels:
+  - conda-forge
+dependencies:
+  - numpy>=1.22
+  - cudatoolkit
+  - pytorch>=2.1
+  - pydantic
+  - loguru
+  - optuna
+  - optuna-dashboard
+  - pytorch-lightning
+  - gunicorn
+  - pandas
+  - typed-argument-parser
+  - pip
+  - pip:
+    - optuna-fast-fanova
