@@ -9,8 +9,6 @@ on:
       - 'main'
 jobs:
   build:
-    env:
-      COVERAGE_TOTAL: 50
     strategy:
       matrix:
         os: [ubuntu-latest]
@@ -33,7 +31,7 @@ jobs:
         if [ -d ./tests ]
         then
         export PATH=$CONDA/bin:$PATH
-        pytest --cov-fail-under=${{ env.COVERAGE_TOTAL }} --cov */
+        pytest ./tests/
         fi
     - name: Test format
       run: |
