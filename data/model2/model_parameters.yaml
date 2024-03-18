@@ -1,0 +1,16 @@
+activation: elu
+d_embedding: 128
+d_feedforward: 256
+decoder:
+  activation: gelu
+  d_feedforward: 64
+  dropout: 0.154104587693995
+  n_heads: 1
+  n_layers: 2
+encoder:
+  d_feedforward: 128
+  n_heads: 4
+  n_layers: 4
+positional_encoding_dropout: 0.09002774298914973
+positional_encoding_linear_transform: false
+pre_training: null
