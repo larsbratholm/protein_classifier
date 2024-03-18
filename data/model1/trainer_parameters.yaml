@@ -1,0 +1,12 @@
+batch_size: 128
+gradient_clip_algorithm: norm
+gradient_clip_value: 30
+matmul_precision: medium
+n_accumulate_grad: 1
+precision: 32-true
+training:
+  early_stopping_patience: 30
+  lr: 0.001
+  n_max_epochs: 100
+  optimizer_name: adamw
+  scheduler: null

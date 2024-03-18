@@ -1,0 +1,33 @@
+parameters: !!python/object:protein_classifier.models.ModelParameters
+  __dict__:
+    activation: logsigmoid
+    d_embedding: 32
+    d_feedforward: 256
+    decoder: null
+    encoder: !!python/object:protein_classifier.models.TransformerParameters
+      __dict__:
+        activation: gelu
+        d_feedforward: 128
+        dropout: 0.1
+        n_heads: 2
+        n_layers: 5
+      __pydantic_extra__: null
+      __pydantic_fields_set__: !!set
+        d_feedforward: null
+        dropout: null
+        n_heads: null
+        n_layers: null
+      __pydantic_private__: null
+    positional_encoding_dropout: 0.1
+    positional_encoding_linear_transform: false
+    pre_training: null
+  __pydantic_extra__: null
+  __pydantic_fields_set__: !!set
+    activation: null
+    d_embedding: null
+    d_feedforward: null
+    encoder: null
+    positional_encoding_dropout: null
+    positional_encoding_linear_transform: null
+    pre_training: null
+  __pydantic_private__: null

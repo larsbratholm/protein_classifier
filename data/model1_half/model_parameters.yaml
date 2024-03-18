@@ -1,0 +1,11 @@
+activation: logsigmoid
+d_embedding: 32
+d_feedforward: 256
+encoder:
+  d_feedforward: 128
+  dropout: 0.1
+  n_heads: 2
+  n_layers: 5
+positional_encoding_dropout: 0.1
+positional_encoding_linear_transform: false
+pre_training: null
