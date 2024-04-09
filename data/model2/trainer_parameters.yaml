@@ -3,10 +3,21 @@ gradient_clip_algorithm: norm
 gradient_clip_value: 30
 matmul_precision: medium
 n_accumulate_grad: 1
-precision: 32-true
-training:
-  early_stopping_patience: 30
-  lr: 0.0002652549223678281
-  n_max_epochs: 205
+pre_training:
+  early_stopping_patience: 20
+  lr: 0.005288958064393678
+  n_max_epochs: 10
   optimizer_name: adam
   scheduler: null
+precision: 32-true
+swa:
+  lr: 0.0017001122094008807
+  n_epochs: 49
+  optimizer_name: adamw
+training:
+  early_stopping_patience: 30
+  freeze_embedding: false
+  lr: 0.00016013219288290402
+  n_max_epochs: 21
+  optimizer_name: adamw
+  scheduler: cosine_annealing_lr

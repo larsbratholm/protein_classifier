@@ -1,16 +1,13 @@
-activation: elu
+activation: hardtanh
 d_embedding: 128
-d_feedforward: 256
-decoder:
-  activation: gelu
-  d_feedforward: 64
-  dropout: 0.154104587693995
-  n_heads: 1
-  n_layers: 2
+d_feedforward: 512
 encoder:
-  d_feedforward: 128
+  d_feedforward: 64
   n_heads: 4
-  n_layers: 4
-positional_encoding_dropout: 0.09002774298914973
+  n_layers: 2
+positional_encoding_dropout: 0.05
 positional_encoding_linear_transform: false
-pre_training: null
+pre_training:
+  backward_window: 2
+  forward_window: 2
+  use_encoder: true
