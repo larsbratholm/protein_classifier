@@ -8,17 +8,16 @@ Train a model.
 import os
 import sys
 import shutil
-from typing import Any, Dict, List, Optional, Tuple, Union, Literal
-import contextlib
+from typing import Any, Dict, Optional, Tuple, Union, Literal
+from types import ModuleType
 
 import numpy as np
-import optuna
+
 import pytorch_lightning as pl
 import sklearn.model_selection
 import tap
 import torch
 from loguru import logger
-from numpy.typing import NDArray
 from pytorch_lightning.callbacks import (
     EarlyStopping,
     ModelCheckpoint,
@@ -26,6 +25,12 @@ from pytorch_lightning.callbacks import (
 )
 from torch import Tensor
 from torch.utils.data import DataLoader
+
+optuna: ModuleType | None
+try:
+    import optuna  # noqa:E402
+except ImportError:
+    optuna = None
 
 DIR_PATH = os.path.dirname(os.path.realpath(__file__)) + "/"
 sys.path.append(DIR_PATH + "../")
@@ -36,7 +41,7 @@ from protein_classifier.utils import (  # noqa:E402
     load_yaml,
     load_pydantic_from_yaml,
 )
-from protein_classifier.data import Dataset  # noqa:E402
+from protein_classifier.data import Dataset, load_dataset  # noqa:E402
 from protein_classifier.models import ModelParameters  # noqa:E402
 
 
@@ -93,27 +98,13 @@ class ArgumentParser(tap.Tap):
         )
 
 
-def get_sequence_label_subset(
-    sequences: List[str], labels: NDArray[np.int_], indices: NDArray[np.int_]
-) -> Tuple[List[str], NDArray[np.int_]]:
-    """
-    Get a subset of the input
-
-    :param sequences: the sequences
-    :param labels: the labels
-    :param indices: the subset indices
-    :returns: sequence and label subsets
-    """
-    return ([sequences[i] for i in indices], labels[indices])
-
-
 def create_dataloaders(
     args: ArgumentParser,
     batch_size: int,
 ) -> Tuple[
-    DataLoader[Tuple[Tensor, Optional[Tensor]]],
-    DataLoader[Tuple[Tensor, Optional[Tensor]]],
-    DataLoader[Tuple[Tensor, Optional[Tensor]]],
+    DataLoader[tuple[Tensor, Tensor, Tensor, Optional[Tensor]]],
+    DataLoader[tuple[Tensor, Tensor, Tensor, Optional[Tensor]]],
+    DataLoader[tuple[Tensor, Tensor, Tensor, Optional[Tensor]]],
 ]:
     """
     Create the data loaders
@@ -123,77 +114,69 @@ def create_dataloaders(
     :returns: training, validation and test dataloaders
     """
     logger.info("Creating dataloaders")
+    max_sequence_length = 0
     if args.test_data is None:
-        sequences = np.loadtxt(
-            f"{args.training_data}", skiprows=1, usecols=0, delimiter=",", dtype=str
-        ).tolist()
-        labels = np.loadtxt(
-            f"{args.training_data}", skiprows=1, usecols=1, delimiter=",", dtype=int
+        data = load_dataset(f"{args.training_data}")
+        max_sequence_length = max(
+            max_sequence_length, max(len(item) for item in data[0])
         )
         logger.info("Splitting training data into a 64%-16%-20% train/val/test split")
-        indices = np.arange(labels.size)
+        indices = np.arange(data.shape[1])
+        np.random.seed(42)
         train_val_indices, test_indices = sklearn.model_selection.train_test_split(
             indices, test_size=0.2
         )
+        np.random.seed()
         train_indices, val_indices = sklearn.model_selection.train_test_split(
             train_val_indices, test_size=0.2
         )
-        training_data = get_sequence_label_subset(sequences, labels, train_indices)
-        validation_data = get_sequence_label_subset(sequences, labels, val_indices)
-        testing_data = get_sequence_label_subset(sequences, labels, test_indices)
+        training_data = data[:, train_indices]
+        validation_data = data[:, val_indices]
+        testing_data = data[:, test_indices]
     else:
-        train_sequences = np.loadtxt(
-            f"{args.training_data}", skiprows=1, usecols=0, delimiter=",", dtype=str
-        ).tolist()
-        train_labels = np.loadtxt(
-            f"{args.training_data}", skiprows=1, usecols=1, delimiter=",", dtype=int
+        data = load_dataset(f"{args.training_data}")
+        max_sequence_length = max(
+            max_sequence_length, max(len(item) for item in data[0])
         )
         logger.info("Splitting training data into a 80%-20% train/val split")
-        indices = np.arange(train_labels.size)
+        indices = np.arange(data.shape[1])
         train_indices, val_indices = sklearn.model_selection.train_test_split(
             indices, test_size=0.2
         )
-        training_data = get_sequence_label_subset(
-            train_sequences, train_labels, train_indices
+        training_data = data[:, train_indices]
+        validation_data = data[:, val_indices]
+        testing_data = load_dataset(f"{args.test_data}")
+        max_sequence_length = max(
+            max_sequence_length, max(len(item) for item in testing_data[0])
         )
-        validation_data = get_sequence_label_subset(
-            train_sequences, train_labels, val_indices
-        )
-        test_sequences: List[str] = np.loadtxt(
-            f"{args.test_data}", skiprows=1, usecols=0, delimiter=",", dtype=str
-        ).tolist()
-        test_labels: NDArray[np.int_] = np.loadtxt(
-            f"{args.test_data}", skiprows=1, usecols=1, delimiter=",", dtype=int
-        )
-        testing_data = (test_sequences, test_labels)
 
     num_workers = (
         len(os.sched_getaffinity(0)) if args.num_workers == 0 else args.num_workers
     )
     train_loader = DataLoader(
-        Dataset(*training_data),
+        Dataset(*training_data, max_sequence_length + 2),  # type: ignore[call-arg]
         batch_size=batch_size,
         shuffle=True,
         pin_memory=True,
         num_workers=num_workers,
-        collate_fn=Dataset.collate,
+        # collate_fn=Dataset.collate,
         drop_last=True,
     )
     val_loader = DataLoader(
-        Dataset(*validation_data),
+        Dataset(*validation_data, max_sequence_length + 2),  # type: ignore[call-arg]
         batch_size=batch_size,
         shuffle=False,
         pin_memory=True,
         num_workers=num_workers,
-        collate_fn=Dataset.collate,
+        # collate_fn=Dataset.collate,
     )
     test_loader = DataLoader(
-        Dataset(*testing_data),
+        Dataset(*testing_data, max_sequence_length + 2),  # type: ignore[call-arg]
         batch_size=batch_size,
         shuffle=False,
         pin_memory=True,
         num_workers=num_workers,
-        collate_fn=Dataset.collate,
+        # collate_fn=Dataset.collate,
     )
     return train_loader, val_loader, test_loader
 
@@ -205,12 +188,15 @@ def check_loss(trainer: pl.Trainer) -> None:
     :param trainer: the pytorch lightning trainer
     """
     loss = trainer.logged_metrics["val_loss"]
+    msg = None
     if torch.isnan(loss):
-        logger.error("Stopped training as loss is nan")
-        raise optuna.TrialPruned()
+        msg = "Stopped training as loss is nan"
     if torch.isinf(loss):
-        logger.error("Stopped training as loss is inf")
-        raise optuna.TrialPruned()
+        msg = "Stopped training as loss is inf"
+    if msg is not None:
+        logger.error(msg)
+        if optuna is not None:
+            raise optuna.TrialPruned()
 
 
 def get_scheduler_optimizer_parameters(
@@ -249,10 +235,9 @@ def get_scheduler_parameters(
 def train(  # pylint: disable=too-many-arguments
     output_folder: str,
     model: LightningModel,
-    train_loader: DataLoader[Tuple[Tensor, Optional[Tensor]]],
-    val_loader: DataLoader[Tuple[Tensor, Optional[Tensor]]],
+    train_loader: DataLoader[tuple[Tensor, Tensor, Tensor, Optional[Tensor]]],
+    val_loader: DataLoader[tuple[Tensor, Tensor, Tensor, Optional[Tensor]]],
     settings: Dict[str, Any],
-    pre_training: bool = False,
     accelerator: Literal["gpu", "cpu"] = "gpu",
 ) -> LightningModel:
     """
@@ -263,21 +248,10 @@ def train(  # pylint: disable=too-many-arguments
     :param train_loader: the training data loader
     :param val_loader: the validation data loader
     :param settings: the training settings
-    :param pre_training: whether or not to do pre-training instead of
-                         training on the target labels
     :returns: fitted model
     """
-    if pre_training is True:
-        if "pre_training" not in settings:
-            return model
-        basename = "pre_training"
-        context = model.pre_training
-    else:
-        basename = "training"
-        context = contextlib.nullcontext  # type: ignore[assignment]
-
-    logger.info(f"Starting {basename}")
-    training_settings = settings[f"{basename}"]
+    logger.info("Starting training")
+    training_settings = settings["training"]
 
     early_stopping = EarlyStopping(
         monitor="val_loss",
@@ -286,12 +260,12 @@ def train(  # pylint: disable=too-many-arguments
         divergence_threshold=0.1,
     )
     checkpoint = ModelCheckpoint(
-        filename=f"{basename}_{{val_loss:.4g}}", monitor="val_loss", save_top_k=1
+        filename="training_{val_loss:.4g}", monitor="val_loss", save_top_k=1
     )
 
     fused = (
-        settings["gradient_clip_value"] == 0
-        or settings["gradient_clip_algorithm"] is None
+        settings["gradient_clip_algorithm"] is None
+        or settings["gradient_clip_value"] == 0
     )
     scheduler_parameters, optimizer_parameters = get_scheduler_optimizer_parameters(
         training_settings,
@@ -319,51 +293,27 @@ def train(  # pylint: disable=too-many-arguments
         default_root_dir=f"{output_folder}",
     )
 
-    if (
-        "freeze_embedding" in training_settings
-        and training_settings["freeze_embedding"] is True
-    ):
-        with torch.no_grad():
-            for p in model.model.embedding.parameters():
-                p.requires_grad_(False)
-    if (
-        "freeze_encoder" in training_settings
-        and training_settings["freeze_encoder"] is True
-    ):
-        with torch.no_grad():
-            for p in model.model._encoder.parameters():
-                p.requires_grad_(False)
-
-    with context():
-        trainer.fit(
-            model=model, train_dataloaders=train_loader, val_dataloaders=val_loader
-        )
+    trainer.fit(model=model, train_dataloaders=train_loader, val_dataloaders=val_loader)
 
     check_loss(trainer)
     # Save checkpoint
-    shutil.copy(checkpoint.best_model_path, f"{output_folder}/{basename}.ckpt")
+    shutil.copy(checkpoint.best_model_path, f"{output_folder}/training.ckpt")
     model = LightningModel.load_from_checkpoint(
         checkpoint_path=checkpoint.best_model_path
     )
-    if "unfreeze" in training_settings and training_settings["unfreeze"] is True:
-        with torch.no_grad():
-            for p in model.model.embedding.parameters():
-                p.requires_grad_(True)
-            for p in model.model._encoder.parameters():
-                p.requires_grad_(True)
     return model
 
 
 def swa(  # pylint: disable=too-many-locals,too-many-arguments
     output_folder: str,
     model: LightningModel,
-    train_loader: DataLoader[Tuple[Tensor, Optional[Tensor]]],
-    val_loader: DataLoader[Tuple[Tensor, Optional[Tensor]]],
+    train_loader: DataLoader[Tuple[Tensor, Tensor, Tensor, Optional[Tensor]]],
+    val_loader: DataLoader[Tuple[Tensor, Tensor, Tensor, Optional[Tensor]]],
     settings: Dict[str, Any],
     accelerator: Literal["gpu", "cpu"] = "gpu",
 ) -> LightningModel:
     """
-    Fine-tune the model bystochastic weight averaging
+    Fine-tune the model by stochastic weight averaging
 
     :param output_folder: the output folder
     :param model: the model
@@ -377,7 +327,7 @@ def swa(  # pylint: disable=too-many-locals,too-many-arguments
 
     logger.info("Starting stochastic weight averaging")
     checkpoint = ModelCheckpoint(
-        filename="stage3_{val_loss:.4g}", monitor="val_loss", save_last=True
+        filename="swa_{val_loss:.4g}", monitor="val_loss", save_last=True
     )
     training_settings = settings["swa"]
     swa_callback = StochasticWeightAveraging(
@@ -422,7 +372,7 @@ def swa(  # pylint: disable=too-many-locals,too-many-arguments
 
 def get_accuracy(
     model: LightningModel,
-    dataloader: DataLoader[Tuple[Tensor, Optional[Tensor]]],
+    dataloader: DataLoader[Tuple[Tensor, Tensor, Tensor, Optional[Tensor]]],
     output_folder: str,
     accelerator: Literal["gpu", "cpu"] = "gpu",
 ) -> float:
@@ -438,9 +388,9 @@ def get_accuracy(
         enable_progress_bar=False,
         default_root_dir=f"{output_folder}",
     )
-    predictions = torch.cat(trainer.predict(model, dataloader))  # type: ignore[arg-type]
-    labels = torch.cat([batch[1] for batch in dataloader])
-    accuracy = (predictions == labels).sum().item() / len(labels)
+    predictions = np.concat(trainer.predict(model, dataloader))  # type: ignore[arg-type]
+    labels = np.concat([batch[3] for batch in dataloader])
+    accuracy: float = (predictions == labels).sum().item() / len(labels)
     with open(f"{output_folder}/test_accuracy.txt", "w", encoding="utf-8") as f:
         f.write(f"{accuracy:.4g}\n")
     with open(f"{output_folder}/test_predictions.txt", "w", encoding="utf-8") as f:
@@ -473,30 +423,17 @@ def main(args: ArgumentParser) -> float:
     torch.set_float32_matmul_precision(settings["matmul_precision"])
     model = LightningModel(model_parameters)
 
-    if "pre_training" in settings and isinstance(settings["pre_training"], str):
-        model = LightningModel.load_from_checkpoint(settings["pre_training"])
-    else:
-        model = train(
-            args.output,
-            model,
-            train_loader,
-            val_loader,
-            settings,
-            pre_training=True,
-            accelerator=args.accelerator,
-        )
     model = train(
         args.output,
         model,
         train_loader,
         val_loader,
         settings,
-        pre_training=False,
         accelerator=args.accelerator,
     )
     model = swa(args.output, model, train_loader, val_loader, settings)
 
-    model.model.save_model(f"{args.output}/model.pt")
+    model.model.save_model(f"{args.output}/model.pt")  # type: ignore[attr-defined]
     test_accuracy = get_accuracy(
         model, test_loader, args.output, accelerator=args.accelerator
     )

@@ -1,6 +1,7 @@
 channels:
   - conda-forge
 dependencies:
+  - python<=3.11
   - numpy>=1.22
   - cudatoolkit
   - pytorch>=2.1
@@ -8,3 +9,5 @@ dependencies:
   - loguru
   - pytorch-lightning
   - typed-argument-parser
+  - scikit-learn
+  - pytorch::torchtriton<3

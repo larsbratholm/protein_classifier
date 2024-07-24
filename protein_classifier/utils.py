@@ -12,7 +12,8 @@ import json
 import warnings
 from typing import Any, Dict, Optional, Union
 
-from pydantic import BaseModel, conint, confloat
+from pydantic import BaseModel
+import numpy as np
 import torch
 import yaml
 from loguru import logger
@@ -58,13 +59,6 @@ _NAME_TO_SCHEDULER: Dict[str, Any] = {
     "cosine_annealing_lr": torch.optim.lr_scheduler.CosineAnnealingLR,
     "onecycle_lr": torch.optim.lr_scheduler.OneCycleLR,
 }
-
-
-# Types
-NaturalNumber = conint(gt=0)
-NaturalNumberMultipleOfTwo = conint(gt=0, multiple_of=2)
-WholeNumber = conint(ge=0)
-Percentile = confloat(ge=0, le=1)
 
 
 def load_yaml(yaml_file: str) -> Dict[str, Any]:
@@ -217,3 +211,14 @@ def dict_to_pydantic(parent: BaseModel, parameters: Dict[str, Any]) -> BaseModel
     """
     obj = parent.parse_raw(json.dumps(parameters))
     return obj
+
+
+def load_vocabulary(location: str) -> list[str]:
+    """
+    Load a vocabulary file
+
+    :param location: the file location
+    :returns: the vocabulary
+    """
+    vocab: list[str] = np.loadtxt(location, dtype=str, delimiter=",").tolist()
+    return vocab

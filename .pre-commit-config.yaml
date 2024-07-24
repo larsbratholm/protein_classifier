@@ -1,6 +1,6 @@
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v4.5.0
+    rev: v4.6.0
     hooks:
       - id: trailing-whitespace
       - id: end-of-file-fixer
@@ -10,13 +10,13 @@ repos:
         args: ['--maxkb=7000']
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.3.2
+    rev: v0.5.4
     hooks:
-      # Formatter
-      - id: ruff-format
       # Linter
       - id: ruff
         args: [ --fix ]
+      # Formatter
+      - id: ruff-format
 
   - repo: local
     hooks:

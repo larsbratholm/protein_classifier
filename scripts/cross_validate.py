@@ -21,6 +21,7 @@ DIR_PATH = os.path.dirname(os.path.realpath(__file__)) + "/"
 sys.path.append(DIR_PATH + "../")
 
 from protein_classifier.utils import configure_logger  # noqa: E402
+from protein_classifier.data import load_dataset  # noqa: E402
 
 
 class ArgumentParser(tap.Tap):
@@ -34,6 +35,7 @@ class ArgumentParser(tap.Tap):
     output: str
     num_workers: int
     accelerator: Literal["gpu", "cpu"]
+    half_training_data: bool
 
     def configure(self) -> None:
         self.add_argument(
@@ -64,6 +66,12 @@ class ArgumentParser(tap.Tap):
             help="The accelerator ('gpu' or 'cpu')",
             default="gpu",
         )
+        self.add_argument(
+            "--half-training-data",
+            help="Use only half training data",
+            default=False,
+            action="store_true",
+        )
 
 
 def create_splits(args: ArgumentParser) -> List[NDArray[np.int_]]:
@@ -75,47 +83,35 @@ def create_splits(args: ArgumentParser) -> List[NDArray[np.int_]]:
     """
     np.random.seed(42)
     cv = sklearn.model_selection.KFold(n_splits=5, shuffle=True)
-    sequences = np.loadtxt(
-        f"{args.data}", skiprows=1, usecols=0, delimiter=",", dtype=str
-    ).tolist()
-    labels = np.loadtxt(f"{args.data}", skiprows=1, usecols=1, delimiter=",", dtype=int)
-    indices = list(cv.split(labels))
-    # TODO
-    train_indices = [
-        train_idx[: len(train_idx) // 2] for (train_idx, test_idx) in indices
-    ]
+    data = load_dataset(f"{args.data}")
+    indices = list(cv.split(data[-1]))
+    if args.half_training_data is True:
+        train_indices = [train_idx[::2] for (train_idx, test_idx) in indices]
+    else:
+        train_indices = [train_idx for (train_idx, test_idx) in indices]
     test_indices = [test_idx for (train_idx, test_idx) in indices]
 
     for i in range(5):
         output_folder = f"{args.output}/split_{i}"
         if not os.path.exists(output_folder):
             os.mkdir(output_folder)
-        save_csv(
-            f"{output_folder}/training_data.csv",
-            [sequences[j] for j in train_indices[i]],
-            labels[train_indices[i]],
-        )
-        save_csv(
-            f"{output_folder}/test_data.csv",
-            [sequences[j] for j in test_indices[i]],
-            labels[test_indices[i]],
-        )
+        save_csv(f"{output_folder}/training_data.csv", data[:, train_indices[i]])
+        save_csv(f"{output_folder}/test_data.csv", data[:, test_indices[i]])
     return test_indices
 
 
-def save_csv(filename: str, sequences: List[str], labels: NDArray[np.int_]) -> None:
+def save_csv(filename: str, data: NDArray[np.str_]) -> None:
     """
-    Save sequences and labels to csv
+    Save data to csv
 
     :param filename: the filename
-    :param sequences: the sequences
-    :param labels: the labels
+    :param data: the data
     """
     with open(filename, "w", encoding="utf-8") as f:
-        f.write("amino_acid_sequence,label")
-        for sequence, label in zip(sequences, labels, strict=True):
+        f.write("DR3,V.GENE,J.GENE,EPITOPE.SPECIES")
+        for entry in data.T:
             f.write("\n")
-            f.write(f"{sequence},{label}\n")
+            f.write(",".join(entry))
 
 
 def create_trainer_args(  # pylint: disable=too-many-branches,too-many-statements

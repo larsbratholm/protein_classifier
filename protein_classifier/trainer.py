@@ -7,8 +7,7 @@ Training class.
 from __future__ import annotations
 
 import copy
-from contextlib import contextmanager
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Union
 
 import pytorch_lightning as pl
 import torch
@@ -39,12 +38,10 @@ class LightningModel(pl.LightningModule):
         # Used in checkpointing
         self.save_hyperparameters("parameters")
 
-        self.model = Model(parameters)
+        model = Model(parameters)
+        self.model = torch.compile(model)
         loss = nn.CrossEntropyLoss()
-        self.loss = torch.jit.script(loss)
-
-        # Context
-        self._pre_training = False
+        self.loss = torch.compile(loss)
 
         # Set optimizer and scheduler defaults
         self._optimizer: str = "adam"
@@ -79,7 +76,7 @@ class LightningModel(pl.LightningModule):
         self._optimizer_parameters = optimizer_parameters
         self._scheduler_parameters = scheduler_parameters
 
-    def configure_optimizers(self) -> Tuple[List[Optimizer], List[Dict[str, Any]]]:
+    def configure_optimizers(self) -> tuple[list[Optimizer], list[Dict[str, Any]]]:  # type: ignore[override]
         """
         Configure optimizer and scheduler for training.
 
@@ -101,64 +98,37 @@ class LightningModel(pl.LightningModule):
         return [optimizer], [scheduler_configs]
 
     def forward(  # pylint: disable=arguments-differ,unused-argument
-        self, batch: Tuple[Tensor, Union[Tensor, List[None]]], batch_idx: int = 0
-    ) -> Dict[str, Tensor]:
+        self,
+        batch: tuple[Tensor, Tensor, Tensor, list[None] | Tensor],
+        batch_idx: int = 0,
+    ) -> tuple[Tensor, Tensor | List[None]]:
         """
         Do predictions on the batch
 
-        :param batch: unpadded (stacked) features and targets
+        :param batch: features and targets
         :param batch_idx: index of the current batch
-        :returns: The loss
+        :returns: The logits and labels
         """
-        sequences, labels = batch
-        data: Dict[str, Tensor] = {}
-        if self._pre_training is True:
-            logits, target_labels = self.model(
-                sequences,
-                pre_training=True,
-            )
-            data["aa_logits"] = logits
-            data["target_aa_labels"] = target_labels
-        else:
-            logits = self.model(sequences)
-            data["logits"] = logits
-        return data
+        sequences, v_genes, j_genes, labels = batch
 
-    def _get_logits_labels(
-        self, batch: Tuple[Tensor, Union[List[None], Tensor]]
-    ) -> Tuple[Tensor, Tensor]:
-        """
-        Return the appropriate logits and labels, depending on if we're
-        pre-training or not.
-
-        :param batch: the sequences and labels
-        :returns: logits and target labels
-        """
-        data = self(batch)
-        if self._pre_training is True:
-            logits = data["aa_logits"]
-            labels = data["target_aa_labels"]
-        else:
-            logits = data["logits"]
-            labels = batch[1]
-            assert isinstance(logits, Tensor)
+        logits: Tensor = self.model(sequences, v_genes, j_genes)
         return logits, labels
 
     def training_step(
         self,
-        batch: Tuple[Tensor, Union[List[None], Tensor]],
+        batch: tuple[Tensor, Tensor, Tensor, list[None] | Tensor],
         batch_idx: int,
         dataloader_idx: int = 0,
     ) -> Tensor:
         """
         Train the model for one batch.
 
-        :param batch: unpadded (stacked) features and targets
+        :param batch: features and targets
         :param batch_idx: index of the current batch
         :param dataloader_idx: index of the current dataloader
         :returns: The training loss
         """
-        logits, labels = self._get_logits_labels(batch)
+        logits, labels = self.forward(batch)
         loss: Tensor = self.loss(logits, labels)
 
         self.training_step_outputs.append(
@@ -168,19 +138,19 @@ class LightningModel(pl.LightningModule):
 
     def validation_step(
         self,
-        batch: Tuple[Tensor, Union[List[None], Tensor]],
+        batch: tuple[Tensor, Tensor, Tensor, list[None] | Tensor],
         batch_idx: int,
         dataloader_idx: int = 0,
     ) -> Tensor:
         """
         Validate the model on a batch.
 
-        :param batch: unpadded (stacked) features targets
+        :param batch: features and targets
         :param batch_idx: index of the current batch
         :param dataloader_idx: index of the current dataloader
         :returns: validation loss
         """
-        logits, labels = self._get_logits_labels(batch)
+        logits, labels = self.forward(batch)
         loss: Tensor = self.loss(logits, labels)
 
         self.validation_step_outputs.append(
@@ -223,32 +193,20 @@ class LightningModel(pl.LightningModule):
 
     def predict_step(
         self,
-        batch: Tuple[Tensor, Union[Tensor, List[None]]],
+        batch: tuple[Tensor, Tensor, Tensor, list[None] | Tensor],
         batch_idx: int,
         dataloader_idx: int = 0,
     ) -> Tensor:
         """
         Sample labels from the logits at 0 temperature.
 
-        :param batch: unpadded (stacked) features and targets
+        :param batch: features and targets
         :param batch_idx: index of the current batch
         :param dataloader_idx: index of the current dataloader
         :returns: sampled labels
         """
-        assert self._pre_training is False
-        logits, _ = self._get_logits_labels(batch)
+        logits, _ = self.forward(batch)
         temperature = 1e-6
         p = F.softmax(logits / temperature, dim=1)
-        samples = torch.multinomial(p, 1)[:, 0]
-        return samples
-
-    @contextmanager
-    def pre_training(self):  # type: ignore
-        """
-        Context to pre-train model on sequences without function.
-        """
-        try:
-            self._pre_training = True
-            yield self
-        finally:
-            self._pre_training = False
+        sampled_labels = torch.multinomial(p, 1)[:, 0]
+        return sampled_labels
