@@ -28,7 +28,7 @@ from torch.utils.data import DataLoader
 
 optuna: ModuleType | None
 try:
-    import optuna  # noqa:E402
+    import optuna  # type: ignore[no-redef] # noqa:E402
 except ImportError:
     optuna = None
 
