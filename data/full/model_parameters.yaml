@@ -1,0 +1,12 @@
+activation: sigmoid
+d_feedforward: 16
+d_gene_embedding: 256
+d_sequence_embedding: 32
+encoder:
+  activation: relu
+  d_feedforward: 128
+  dropout: 0.05
+  n_heads: 4
+  n_layers: 4
+positional_encoding_dropout: 0.2
+positional_encoding_linear_transform: false

@@ -1,0 +1,15 @@
+batch_size: 1024
+gradient_clip_algorithm: null
+matmul_precision: high
+n_accumulate_grad: 1
+precision: bf16-mixed
+swa:
+  lr: 0.0005
+  n_epochs: 30
+  optimizer_name: adam
+training:
+  early_stopping_patience: 30
+  lr: 0.0005
+  n_max_epochs: 300
+  optimizer_name: adamw
+  scheduler: cosine_annealing_lr
